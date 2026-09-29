@@ -28,6 +28,9 @@
   #legend { margin-top: 8px; font-size: 12px; }
   #legend .bar { height: 10px; background: linear-gradient(to right, #fff5eb, #7f2704); border-radius: 2px; }
   #legend .labels { display: flex; justify-content: space-between; margin-top: 2px; }
+  .categorical-legend { margin-top: 4px; font-size: 11px; }
+  .categorical-legend .swatch-row { display: flex; align-items: center; gap: 6px; margin-top: 2px; }
+  .categorical-legend .swatch { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
 </style>
 </head>
 <body>
@@ -52,6 +55,11 @@
       <div class="bar"></div>
       <div class="labels" id="legend-labels"><span>低い</span><span>高い</span></div>
     </div>
+    <label style="margin-top: 10px;">
+      <input type="checkbox" id="toggle-infiltration" />
+      雨水浸透機能（千葉県）を表示
+    </label>
+    <div id="infiltration-legend" class="categorical-legend"></div>
   </section>
 
   <section>
@@ -310,6 +318,31 @@ const MESH_SCORES = {
 
 let currentMeshScore = "priority_rank";
 
+// 雨水浸透機能レイヤーのカテゴリ("result"列の値)ごとの色・凡例ラベル。
+// 適地/最適地を緑系、不適地を赤系、対象外・判定不能・除外はグレー系にしている。
+const INFILTRATION_CATEGORIES = [
+  { value: "01最適地", label: "最適地", color: "#1a9850" },
+  { value: "02適地", label: "適地", color: "#91cf60" },
+  { value: "03不適地", label: "不適地", color: "#d73027" },
+  { value: "05判定不能（地形分類データなし）", label: "判定不能（地形分類データなし）", color: "#bdbdbd" },
+  { value: "06判定対象外（山地等）", label: "判定対象外（山地等）", color: "#969696" },
+  { value: "07除外区域", label: "除外区域", color: "#525252" },
+];
+
+function infiltrationFillColorExpression() {
+  const expr = ["match", ["get", "result"]];
+  INFILTRATION_CATEGORIES.forEach((c) => expr.push(c.value, c.color));
+  expr.push("#cccccc"); // 未知の値のフォールバック
+  return expr;
+}
+
+function renderInfiltrationLegend() {
+  const el = document.getElementById("infiltration-legend");
+  el.innerHTML = INFILTRATION_CATEGORIES.map(
+    (c) => `<div class="swatch-row"><span class="swatch" style="background:${c.color}"></span>${c.label}</div>`
+  ).join("");
+}
+
 function meshFillColorExpression(scoreId) {
   const cfg = MESH_SCORES[scoreId];
   return [
@@ -403,6 +436,47 @@ async function addDataLayers() {
         source: "inzai-boundary",
         paint: { "line-color": "#2166ac", "line-width": 1.5 },
       });
+    }
+
+    const infiltration = vectors.find((v) => v.id === "inzai_infiltration_potential");
+    if (infiltration) {
+      const infiltrationVisible = document.getElementById("toggle-infiltration").checked;
+      map.addSource("inzai-infiltration", { type: "geojson", data: `data/${infiltration.path}` });
+      map.addLayer({
+        id: "inzai-infiltration-fill",
+        type: "fill",
+        source: "inzai-infiltration",
+        layout: { visibility: infiltrationVisible ? "visible" : "none" },
+        paint: {
+          "fill-color": infiltrationFillColorExpression(),
+          "fill-opacity": 0.5,
+        },
+      });
+      map.addLayer({
+        id: "inzai-infiltration-outline",
+        type: "line",
+        source: "inzai-infiltration",
+        layout: { visibility: infiltrationVisible ? "visible" : "none" },
+        paint: { "line-color": "#666", "line-width": 0.2 },
+      });
+      renderInfiltrationLegend();
+
+      if (!dataLayerListenersAttached) {
+        map.on("click", "inzai-infiltration-fill", (e) => {
+          const p = e.features[0].properties;
+          const cat = INFILTRATION_CATEGORIES.find((c) => c.value === p.result);
+          new maplibregl.Popup()
+            .setLngLat(e.lngLat)
+            .setHTML(`<strong>雨水浸透機能</strong><br>${cat ? cat.label : p.result}`)
+            .addTo(map);
+        });
+
+        document.getElementById("toggle-infiltration").addEventListener("change", (e) => {
+          const visibility = e.target.checked ? "visible" : "none";
+          map.setLayoutProperty("inzai-infiltration-fill", "visibility", visibility);
+          map.setLayoutProperty("inzai-infiltration-outline", "visibility", visibility);
+        });
+      }
     }
   } catch (err) {
     console.warn("ベクタカタログ(data/vectors_catalog.json)の読み込みに失敗しました。", err);

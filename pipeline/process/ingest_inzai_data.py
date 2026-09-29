@@ -109,6 +109,22 @@ VECTOR_DEFS: list[dict] = [
         "name": "100mメッシュ GI統合スコア（白井・印西）",
         "description": "100mメッシュ単位のグリーンインフラ(GI)関連スコア・開発圧・土地被覆割合等の統合データ(高解像度版)。",
     },
+    {
+        "id": "inzai_infiltration_potential",
+        "src": "03_地形・地質等から期待される雨水浸透機能_12_千葉県.shp",
+        "name": "雨水浸透機能（千葉県）",
+        "description": "地形・地質等から期待される雨水浸透機能の適地区分('result'列: "
+        "01最適地/02適地/03不適地/05判定不能/06判定対象外/07除外区域)。",
+        # 元のshpの属性(dbf)がlatin1として読めるUTF-8のバイト列になっている
+        # (実際はUTF-8encodeなのにfiona/pyogrioがlatin1として復号している)ため、
+        # 文字列列をlatin1で再エンコードしutf-8で読み直して文字化けを直す。
+        "fix_mojibake": True,
+        # 地形分類由来のポリゴンで頂点数が非常に多く(2,031件で約50万頂点)、
+        # 無圧縮だと34MB近くになる。0.0003度(約30m)まで単純化して約8MBに
+        # 軽量化する(このレイヤは参考情報の県全域オーバーレイのため、
+        # 多少の輪郭の粗さは許容する)。
+        "simplify_tolerance": 0.0003,
+    },
 ]
 
 
@@ -257,8 +273,19 @@ def process_vectors() -> list[dict]:
         print(f"処理中: {definition['src']} -> {dst_path.name}")
 
         gdf = gpd.read_file(src_path)
+        if definition.get("fix_mojibake"):
+            for col in gdf.select_dtypes(include=["object", "str"]).columns:
+                if col == gdf.geometry.name:
+                    continue
+                gdf[col] = gdf[col].apply(
+                    lambda v: v.encode("latin1").decode("utf-8") if isinstance(v, str) else v
+                )
         if gdf.crs is not None and gdf.crs.to_string() != DST_CRS:
             gdf = gdf.to_crs(DST_CRS)
+
+        simplify_tolerance = definition.get("simplify_tolerance")
+        if simplify_tolerance is not None:
+            gdf["geometry"] = gdf.geometry.simplify(simplify_tolerance, preserve_topology=True)
 
         dst_path.parent.mkdir(parents=True, exist_ok=True)
         gdf.to_file(dst_path, driver="GeoJSON")

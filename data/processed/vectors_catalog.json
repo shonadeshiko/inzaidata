@@ -13,6 +13,13 @@
       "description": "100mメッシュ単位のグリーンインフラ(GI)関連スコア・開発圧・土地被覆割合等の統合データ(高解像度版)。",
       "path": "vectors/inzai_mesh100m_gi.geojson",
       "feature_count": 22299
+    },
+    {
+      "id": "inzai_infiltration_potential",
+      "name": "雨水浸透機能（千葉県）",
+      "description": "地形・地質等から期待される雨水浸透機能の適地区分('result'列: 01最適地/02適地/03不適地/05判定不能/06判定対象外/07除外区域)。",
+      "path": "vectors/inzai_infiltration_potential.geojson",
+      "feature_count": 2031
     }
   ]
 }
