@@ -1,3 +1,18 @@
 {
-  "vectors": []
+  "vectors": [
+    {
+      "id": "inzai_boundary",
+      "name": "白井・印西域（行政界+1kmバッファ）",
+      "description": "白井市・印西市の行政界に1kmのバッファを加えた範囲のポリゴン。",
+      "path": "vectors/inzai_boundary.geojson",
+      "feature_count": 1
+    },
+    {
+      "id": "inzai_mesh100m_gi",
+      "name": "100mメッシュ GI統合スコア（白井・印西）",
+      "description": "100mメッシュ単位のグリーンインフラ(GI)関連スコア・開発圧・土地被覆割合等の統合データ(高解像度版)。",
+      "path": "vectors/inzai_mesh100m_gi.geojson",
+      "feature_count": 22299
+    }
+  ]
 }

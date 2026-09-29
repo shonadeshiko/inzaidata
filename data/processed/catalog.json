@@ -1,3 +1,54 @@
 {
-  "rasters": []
+  "rasters": [
+    {
+      "id": "inzai_paddy_ratio",
+      "name": "水田の占有率（千葉県）",
+      "unit": "比率(0-1)",
+      "description": "グリッド内における水田の占有割合。値が高いほど水田が多い。",
+      "path": "rasters/inzai_paddy_ratio.tif"
+    },
+    {
+      "id": "inzai_landscape_diversity",
+      "name": "自然的景観の多様度（千葉県）",
+      "unit": "指数(0-1)",
+      "description": "自然的景観の多様度を示す指数。値が高いほど景観の多様性が高い。",
+      "path": "rasters/inzai_landscape_diversity.tif"
+    },
+    {
+      "id": "inzai_hand_rank",
+      "name": "HANDランク（白井・印西）",
+      "unit": "ランク(1-5)",
+      "description": "最近接水路との比高(HAND)による区分。値が大きいほど水路との比高が小さい(水路に近い)。",
+      "path": "rasters/inzai_hand_rank.tif"
+    },
+    {
+      "id": "inzai_dev_pressure_2020_2024",
+      "name": "開発圧 2020-2024 v2（白井・印西）",
+      "unit": "区分(-1,0,+1)",
+      "description": "2020年から2024年にかけての開発圧の変化区分(v2データ)。+1:都市化(開発圧増加) 0:変化なし -1:開発後退(緑地化等)。",
+      "path": "rasters/inzai_dev_pressure_2020_2024.tif"
+    },
+    {
+      "id": "inzai_dev_pressure_2011_2022",
+      "name": "開発圧 2011-2022 v2（白井・印西）",
+      "unit": "区分(-1,0,+1)",
+      "description": "2011年から2022年にかけての開発圧の変化区分(v2データ)。+1:都市化(開発圧増加) 0:変化なし -1:開発後退(緑地化等)。",
+      "path": "rasters/inzai_dev_pressure_2011_2022.tif"
+    },
+    {
+      "id": "inzai_twi_rank",
+      "name": "TWIランク（白井・印西）",
+      "unit": "ランク(1-5)",
+      "description": "地形的湿潤度指数(TWI)に基づく浸水・湛水しやすさの目安ランク。値が大きいほど水が集まりやすい地形。",
+      "path": "rasters/inzai_twi_rank.tif"
+    },
+    {
+      "id": "inzai_gi_terrain_score",
+      "name": "GI地形スコア（白井・印西）",
+      "unit": "スコア(1.0-5.0)",
+      "description": "地形条件から見たグリーンインフラ(GI)適性の統合スコア(連続値)。",
+      "path": "rasters/inzai_gi_terrain_score.tif",
+      "scale": 10
+    }
+  ]
 }

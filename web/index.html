@@ -32,7 +32,7 @@
 </head>
 <body>
 <div id="panel">
-  <strong>印旛沼流域 GIS解析マップ（高解像度版・雛形）</strong>
+  <strong>印旛沼流域 GIS解析マップ（白井・印西 高解像度版）</strong>
 
   <section>
     <h2>① 表示するレイヤー</h2>
@@ -42,7 +42,7 @@
     </label>
     <label>
       <input type="checkbox" id="toggle-mesh" checked />
-      500mメッシュ（印旛沼流域）を表示
+      100mメッシュ（白井・印西）を表示
     </label>
     <label style="margin-left: 18px;">
       色分け項目:
@@ -237,8 +237,8 @@ const defaultBaseLayer = BASE_LAYERS.find((l) => l.tiles) || BASE_LAYERS[0];
 const map = new maplibregl.Map({
   container: "map",
   style: baseLayerStyleSpec(defaultBaseLayer),
-  center: [140.33, 35.76],
-  zoom: 11,
+  center: [140.14, 35.795],
+  zoom: 13,
 });
 
 // ベースマップ切り替えセレクタの初期化
@@ -267,7 +267,7 @@ map.on("error", (e) => {
 
 let dataLayerListenersAttached = false;
 
-// メッシュの色分け対象スコアの定義(gisdata/千葉県版のメッシュ属性名を踏襲した雛形)。
+// メッシュの色分け対象スコアの定義(gisdata/千葉県版のメッシュ属性名と一致することを確認済み)。
 // 印旛沼流域の高解像度メッシュデータが同じ属性名で作られる想定だが、実データが
 // 届いたらフィールド名・domain(色分けの値range)・凡例が合っているか確認すること。
 const MESH_SCORES = {
@@ -341,7 +341,7 @@ async function addDataLayers() {
     const vectorsCatalog = await fetch("data/vectors_catalog.json").then((r) => r.json());
     const vectors = vectorsCatalog.vectors || [];
 
-    const mesh = vectors.find((v) => v.id === "inzai_mesh500m_gi");
+    const mesh = vectors.find((v) => v.id === "inzai_mesh100m_gi");
     if (mesh) {
       map.addSource("inzai-mesh", { type: "geojson", data: `data/${mesh.path}` });
       map.addLayer({

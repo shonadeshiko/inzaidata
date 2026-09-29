@@ -1,11 +1,11 @@
-# 印旛沼流域 GIS解析プラットフォーム（高解像度版）
+# 印旛沼流域 GIS解析プラットフォーム（白井・印西 高解像度版）
 
-千葉県印旛沼流域を対象に、空間演算・ラスタ解析・ポテンシャル測定を行い、
-結果を静的サイトとして公開するためのリポジトリです。
+千葉県印旛沼流域のうち白井市・印西市を対象に、空間演算・ラスタ解析・
+ポテンシャル測定を行い、結果を静的サイトとして公開するためのリポジトリです。
 
 姉妹リポジトリ [gisdata](https://github.com/shonadeshiko/gisdata)（印旛沼流域版）の
-コード構成をコピーし、より高解像度なデータへの置き換えを想定した雛形です。
-**実データはまだ投入されていません**（後日取り込み予定）。
+コード構成をコピーし、より高解像度なデータ（100mメッシュ等）を
+取り込んだもの。
 
 ## 設計方針
 
@@ -23,7 +23,7 @@
 inzaidata/
 ├── pipeline/
 │   ├── process/
-│   │   ├── ingest_inzai_data.py       # 印旛沼流域の実データ取り込み(雛形、RASTER_DEFS等は空)
+│   │   ├── ingest_inzai_data.py       # 白井・印西の高解像度実データ取り込み
 │   │   └── ingest_gsi_elevation.py    # 国土地理院 標高タイル取得
 │   └── requirements.txt
 ├── data/
@@ -47,12 +47,10 @@ pip install -r requirements.txt
 python process/ingest_inzai_data.py   # 元データが data/raw/inzai/ にある場合
 ```
 
-`pipeline/process/ingest_inzai_data.py` の `RASTER_DEFS` /
-`VECTOR_DEFS` は現在空（`[]`）。実データが届いたら、
-gisdataの `ingest_chiba_data.py` の書き方を参考に定義を追加していく。
-連続値のデータをuint8で軽量化したい場合は `uint8_scale` を指定する
-（例: 10を指定すると値を10倍してuint8(0-255)に丸めて保存し、
-frontend側で10で割り戻す）。
+新しいデータを追加したい場合は `pipeline/process/ingest_inzai_data.py` の
+`RASTER_DEFS` / `VECTOR_DEFS` に定義を1つ追加するだけでよい。連続値のデータを
+uint8で軽量化したい場合は `uint8_scale` を指定する（例: 10を指定すると
+値を10倍してuint8(0-255)に丸めて保存し、frontend側で10で割り戻す）。
 
 `RASTER_DEFS` の `"src"` にファイル名のリストを渡すと、複数ファイル
 （例: 分割されたデータ）をモザイク結合してから処理する
@@ -85,9 +83,10 @@ python -m http.server 8000
 
 `web/index.html` の `MESH_SCORES` は、gisdata側の500mメッシュ
 (GI保全スコア・GI開発圧スコア・優先度ランク・市街地率・森林率)の
-属性名をそのまま踏襲した雛形。印旛沼流域の高解像度メッシュデータが
-同じ属性名で作られる前提になっているため、**実データが届いたら
-フィールド名・domain(色分けの値range)・凡例が合っているか確認すること**。
+属性名を踏襲しているが、白井・印西の実メッシュデータ
+(`メッシュ100m_GI統合_白井印西.gpkg`、100m解像度・22,299メッシュ)も
+同じ属性名(`gi_conservation_score`/`gi_pressure_score`/`priority_rank`/
+`urban_frac`/`forest_frac`等)で作られていることを確認済み。
 
 ## 標高データ（国土地理院 標高タイル）について
 
@@ -112,14 +111,33 @@ pushでは実行せず、GitHub Actionsの `Ingest GSI Elevation Data`
 一度取得したラスタはブラウザ内にキャッシュされ、2回目以降のクリックで
 再取得しないようになっている。
 
+## 白井・印西 実データについて
+
+`pipeline/process/ingest_inzai_data.py` は、白井市・印西市の高解像度実データ
+（水田占有率・自然的景観の多様度(千葉県全域)、HANDランク・開発圧
+(2011-2022/2020-2024)・TWIランク・GI地形スコア(白井・印西域)のラスタ、
+行政界+1kmバッファ・100mメッシュGI統合のベクタ）を取り込み、
+EPSG:4326への再投影・COG化・GeoJSON化を行う。
+
+元データは `data/raw/inzai/{raster,vector}/` に配置する想定（Git管理外）。
+
+### データの注意点
+
+- **メッシュGeoJSONのサイズ**：100m解像度・22,299メッシュのため
+  約17MBある。本サイトは「ブラウザが全ファイルを丸ごとfetchする」設計
+  のため、初回読み込みがやや重くなる。
+- **未取り込みのデータ種類**：以下のデータはまだ
+  `RASTER_DEFS`/`VECTOR_DEFS` に未登録。取り込む場合はカテゴリカルな
+  値の色分け(凡例)など、フロントエンド側の追加実装が必要になる見込み。
+  - `JAXA_HRLC土地被覆_2020_白井印西.tif` / `_2024_白井印西.tif`
+    （カテゴリカル、1-15の土地被覆区分）
+  - `03_地形・地質等から期待される雨水浸透機能_12_千葉県.shp`
+    （シェープファイル、千葉県全域）
+
 ## 今後のTODO
 
-- [ ] 印旛沼流域の高解像度な実データ（ラスタ・ベクタ）を
-      `data/raw/inzai/` に配置し、`ingest_inzai_data.py` の
-      `RASTER_DEFS` / `VECTOR_DEFS` に登録
-- [ ] メッシュデータの属性名がgisdata版と異なる場合、`MESH_SCORES` を調整
-- [ ] 高解像度化に伴うファイルサイズの検証（shimamotodataで京都・大阪
-      広域化した際、メッシュGeoJSONが約26MBまで増えた前例あり。
-      必要に応じてジオメトリ簡略化・タイル化を検討）
+- [ ] JAXA土地被覆・雨水浸透機能データの取り込み（カテゴリカル値の
+      可視化を新規実装）
+- [ ] メッシュのサイズ最適化（ジオメトリ簡略化 / タイル化）が必要か検討
 - [ ] `ingest_gsi_elevation.py` の `ZOOM` を対象解像度に合わせて調整
 - [ ] Cloudflare R2 / Pages への接続とデプロイ設定

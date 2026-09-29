@@ -35,26 +35,81 @@ VECTORS_DIR = PROCESSED_DIR / "vectors"
 DST_CRS = "EPSG:4326"
 
 # id, 元ファイル名(または複数ファイルのリスト=モザイク結合), 表示名, 単位, 説明, リサンプリング方法
-# 例:
-# {
-#     "id": "inzai_hand_rank",
-#     "src": "HANDランク_印旛沼流域.tif",
-#     "name": "HANDランク（印旛沼流域）",
-#     "unit": "ランク(1-5)",
-#     "description": "最近接水路との比高(HAND)による区分。値が大きいほど水路との比高が小さい(水路に近い)。",
-#     "resampling": Resampling.nearest,
-# },
-RASTER_DEFS: list[dict] = []
+RASTER_DEFS: list[dict] = [
+    {
+        "id": "inzai_paddy_ratio",
+        "src": "05_水田の占有率_12_千葉県.tif",
+        "name": "水田の占有率（千葉県）",
+        "unit": "比率(0-1)",
+        "description": "グリッド内における水田の占有割合。値が高いほど水田が多い。",
+        "resampling": Resampling.bilinear,
+    },
+    {
+        "id": "inzai_landscape_diversity",
+        "src": "04_自然的景観の多様度_12_千葉県.tif",
+        "name": "自然的景観の多様度（千葉県）",
+        "unit": "指数(0-1)",
+        "description": "自然的景観の多様度を示す指数。値が高いほど景観の多様性が高い。",
+        "resampling": Resampling.bilinear,
+    },
+    {
+        "id": "inzai_hand_rank",
+        "src": "HANDランク_白井印西.tif",
+        "name": "HANDランク（白井・印西）",
+        "unit": "ランク(1-5)",
+        "description": "最近接水路との比高(HAND)による区分。値が大きいほど水路との比高が小さい(水路に近い)。",
+        "resampling": Resampling.nearest,
+    },
+    {
+        "id": "inzai_dev_pressure_2020_2024",
+        "src": "開発圧v2_2020-2024_白井印西.tif",
+        "name": "開発圧 2020-2024 v2（白井・印西）",
+        "unit": "区分(-1,0,+1)",
+        "description": "2020年から2024年にかけての開発圧の変化区分(v2データ)。+1:都市化(開発圧増加) 0:変化なし -1:開発後退(緑地化等)。",
+        "resampling": Resampling.nearest,
+    },
+    {
+        "id": "inzai_dev_pressure_2011_2022",
+        "src": "開発圧v2_2011-2022_白井印西.tif",
+        "name": "開発圧 2011-2022 v2（白井・印西）",
+        "unit": "区分(-1,0,+1)",
+        "description": "2011年から2022年にかけての開発圧の変化区分(v2データ)。+1:都市化(開発圧増加) 0:変化なし -1:開発後退(緑地化等)。",
+        "resampling": Resampling.nearest,
+    },
+    {
+        "id": "inzai_twi_rank",
+        "src": "TWIランク_白井印西.tif",
+        "name": "TWIランク（白井・印西）",
+        "unit": "ランク(1-5)",
+        "description": "地形的湿潤度指数(TWI)に基づく浸水・湛水しやすさの目安ランク。値が大きいほど水が集まりやすい地形。",
+        "resampling": Resampling.nearest,
+    },
+    {
+        "id": "inzai_gi_terrain_score",
+        "src": "GI地形スコア_白井印西.tif",
+        "name": "GI地形スコア（白井・印西）",
+        "unit": "スコア(1.0-5.0)",
+        "description": "地形条件から見たグリーンインフラ(GI)適性の統合スコア(連続値)。",
+        "resampling": Resampling.bilinear,
+        "uint8_scale": 10,  # 10倍してuint8化(小数点以下1桁の精度を保持)。frontendで10で割り戻す
+    },
+]
 
 # id, 元ファイル名, 表示名, 説明
-# 例:
-# {
-#     "id": "inzai_mesh500m_gi",
-#     "src": "メッシュ500m_GI統合_印旛沼流域.gpkg",
-#     "name": "500mメッシュ GI統合スコア（印旛沼流域）",
-#     "description": "500mメッシュ単位のグリーンインフラ(GI)関連スコア等の統合データ。",
-# },
-VECTOR_DEFS: list[dict] = []
+VECTOR_DEFS: list[dict] = [
+    {
+        "id": "inzai_boundary",
+        "src": "白井印西域_行政界+1kmバッファ.gpkg",
+        "name": "白井・印西域（行政界+1kmバッファ）",
+        "description": "白井市・印西市の行政界に1kmのバッファを加えた範囲のポリゴン。",
+    },
+    {
+        "id": "inzai_mesh100m_gi",
+        "src": "メッシュ100m_GI統合_白井印西.gpkg",
+        "name": "100mメッシュ GI統合スコア（白井・印西）",
+        "description": "100mメッシュ単位のグリーンインフラ(GI)関連スコア・開発圧・土地被覆割合等の統合データ(高解像度版)。",
+    },
+]
 
 
 def merge_rasters(src_paths: list[Path], tmp_dir: Path) -> Path:
