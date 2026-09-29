@@ -106,6 +106,7 @@
     </div>
     <p class="note">結果の「平均」は集計セルの合計(sum)を集計セル数(count)で
     割った値で、比率として扱いたい場合の「割合」と同じ値です。</p>
+    <button type="button" id="analysis-area-clear">分析範囲を消す</button>
     <div id="raster-results"></div>
   </section>
 
@@ -338,6 +339,7 @@ async function computeRasterBufferStats(rasterMeta, bufferPolygon, bufferBbox) {
 // 任意のポリゴン(バッファ円・手描きポリゴンいずれも可)に対して
 // 全ラスタの統計値を計算し、結果テーブルを描画する。
 async function calcStatsForAllRastersInPolygon(polygon) {
+  showAnalysisArea(polygon);
   const bbox = turf.bbox(polygon);
 
   const resultsEl = document.getElementById("raster-results");
@@ -518,6 +520,38 @@ function clearDrawPoints() {
   updateDrawPreview();
 }
 
+// 実際に集計対象になった範囲(バッファ円 or 確定したポリゴン)を
+// 地図上に表示しておくためのレイヤー。draw-previewとは別に持ち、
+// 「計算中の下書き」と「確定して計算に使った範囲」を区別する。
+function addAnalysisAreaLayer() {
+  if (map.getSource("analysis-area")) return;
+  map.addSource("analysis-area", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+  map.addLayer({
+    id: "analysis-area-fill",
+    type: "fill",
+    source: "analysis-area",
+    paint: { "fill-color": "#1e88e5", "fill-opacity": 0.15 },
+  });
+  map.addLayer({
+    id: "analysis-area-line",
+    type: "line",
+    source: "analysis-area",
+    paint: { "line-color": "#1e88e5", "line-width": 2 },
+  });
+}
+
+function showAnalysisArea(polygon) {
+  const src = map.getSource("analysis-area");
+  if (src) src.setData({ type: "FeatureCollection", features: [polygon] });
+}
+
+function clearAnalysisArea() {
+  const src = map.getSource("analysis-area");
+  if (src) src.setData({ type: "FeatureCollection", features: [] });
+  clearDrawPoints();
+  document.getElementById("raster-results").innerHTML = "";
+}
+
 document.querySelectorAll('input[name="analysis-mode"]').forEach((radio) => {
   radio.addEventListener("change", () => {
     drawModeActive = document.getElementById("mode-draw").checked;
@@ -540,7 +574,12 @@ document.getElementById("draw-finish").addEventListener("click", () => {
   }
   const ring = [...drawPoints, drawPoints[0]];
   calcStatsForAllRastersInPolygon(turf.polygon([ring]));
+  // 確定後はanalysis-areaレイヤーが同じ範囲を表示するので、下書きの
+  // 頂点/線は消しておく(二重に表示されるのを防ぐ)。
+  clearDrawPoints();
 });
+
+document.getElementById("analysis-area-clear").addEventListener("click", clearAnalysisArea);
 
 // メッシュの色分け対象スコアの定義(gisdata/千葉県版のメッシュ属性名と一致することを確認済み)。
 // 印旛沼流域の高解像度メッシュデータが同じ属性名で作られる想定だが、実データが
@@ -765,6 +804,7 @@ async function addDataLayers() {
     }
 
     addDrawPreviewLayer();
+    addAnalysisAreaLayer();
   } catch (err) {
     console.warn("ベクタカタログ(data/vectors_catalog.json)の読み込みに失敗しました。", err);
   }
