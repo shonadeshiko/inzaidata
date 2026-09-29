@@ -71,7 +71,20 @@
   </section>
 
   <section>
-    <h2>② 範囲の分析</h2>
+    <h2>② ラスタの表示</h2>
+    <label>
+      表示するラスタ:
+      <select id="raster-overlay-select"><option value="">なし</option></select>
+    </label>
+    <label style="margin-left: 18px;">
+      透過度: <span id="raster-overlay-opacity-value">0.8</span>
+      <input type="range" id="raster-overlay-opacity" min="0" max="1" step="0.05" value="0.8" />
+    </label>
+    <div id="raster-overlay-legend" class="categorical-legend"></div>
+  </section>
+
+  <section>
+    <h2>③ 範囲の分析</h2>
     <label>
       <input type="radio" name="analysis-mode" id="mode-buffer" value="buffer" checked />
       クリックしてバッファ範囲を分析
@@ -103,7 +116,16 @@
 let rasterCatalog = [];
 fetch("data/catalog.json")
   .then((res) => res.json())
-  .then((json) => { rasterCatalog = json.rasters || []; })
+  .then((json) => {
+    rasterCatalog = json.rasters || [];
+    const select = document.getElementById("raster-overlay-select");
+    rasterCatalog.forEach((r) => {
+      const option = document.createElement("option");
+      option.value = r.id;
+      option.textContent = r.name;
+      select.appendChild(option);
+    });
+  })
   .catch(() => {
     console.warn("ラスタカタログ(data/catalog.json)が見つかりません。パイプライン出力をweb/data/にコピーしてください。");
   });
@@ -129,6 +151,136 @@ async function loadGeoTiffImage(rasterMeta) {
   geotiffImageCache.set(rasterMeta.path, image);
   return image;
 }
+
+// ラスタの値を0-1の位置tから色(RGB)へ変換する簡易カラーランプ
+// (青→緑→黄→赤の4段階)。データの実際のmin/maxに合わせて自動的に
+// スケールするため、ラスタごとに個別のdomain設定は不要。
+const RASTER_OVERLAY_RAMP = [
+  [0.0, [49, 54, 149]],
+  [0.33, [69, 199, 142]],
+  [0.66, [254, 224, 139]],
+  [1.0, [215, 48, 39]],
+];
+
+function rampColor(t) {
+  t = Math.max(0, Math.min(1, t));
+  for (let i = 0; i < RASTER_OVERLAY_RAMP.length - 1; i++) {
+    const [t0, c0] = RASTER_OVERLAY_RAMP[i];
+    const [t1, c1] = RASTER_OVERLAY_RAMP[i + 1];
+    if (t >= t0 && t <= t1) {
+      const f = t1 > t0 ? (t - t0) / (t1 - t0) : 0;
+      return [
+        Math.round(c0[0] + (c1[0] - c0[0]) * f),
+        Math.round(c0[1] + (c1[1] - c0[1]) * f),
+        Math.round(c0[2] + (c1[2] - c0[2]) * f),
+      ];
+    }
+  }
+  return RASTER_OVERLAY_RAMP[RASTER_OVERLAY_RAMP.length - 1][1];
+}
+
+// ラスタ全体を読み込み、値をカラーランプで着色したcanvasを作る。
+// nodataセルは透明(alpha=0)にする。
+async function buildRasterOverlayCanvas(rasterMeta) {
+  const image = await loadGeoTiffImage(rasterMeta);
+  const width = image.getWidth();
+  const height = image.getHeight();
+  const nodata = image.getGDALNoData();
+  const [band] = await image.readRasters();
+
+  let min = Infinity, max = -Infinity;
+  for (let i = 0; i < band.length; i++) {
+    const v = band[i];
+    if (nodata !== null && v === nodata) continue;
+    const rv = rasterMeta.scale ? v / rasterMeta.scale : v;
+    if (rv < min) min = rv;
+    if (rv > max) max = rv;
+  }
+
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+  const imgData = ctx.createImageData(width, height);
+  for (let i = 0; i < band.length; i++) {
+    const v = band[i];
+    const o = i * 4;
+    if (nodata !== null && v === nodata) {
+      imgData.data[o + 3] = 0;
+      continue;
+    }
+    const rv = rasterMeta.scale ? v / rasterMeta.scale : v;
+    const t = max > min ? (rv - min) / (max - min) : 0.5;
+    const [r, g, b] = rampColor(t);
+    imgData.data[o] = r;
+    imgData.data[o + 1] = g;
+    imgData.data[o + 2] = b;
+    imgData.data[o + 3] = 200;
+  }
+  ctx.putImageData(imgData, 0, 0);
+  return { canvas, min, max, bbox: image.getBoundingBox() };
+}
+
+function renderRasterOverlayLegend(rasterMeta, min, max) {
+  const el = document.getElementById("raster-overlay-legend");
+  const gradient = RASTER_OVERLAY_RAMP.map(([, c]) => `rgb(${c[0]},${c[1]},${c[2]})`).join(", ");
+  el.innerHTML = `
+    <div style="margin-top:4px;">${rasterMeta.name}${rasterMeta.unit ? ` (${rasterMeta.unit})` : ""}</div>
+    <div class="bar" style="background: linear-gradient(to right, ${gradient});"></div>
+    <div class="labels"><span>${min.toFixed(2)}</span><span>${max.toFixed(2)}</span></div>
+  `;
+}
+
+let currentRasterOverlayId = null;
+
+// 選択されたラスタをMapLibreの"image"ソースとして地図に重ねる。
+// ベースマップ切り替え(setStyle)でソースが消えるため、addDataLayers()の
+// 中からも再度呼び出す。
+async function setRasterOverlay(rasterId) {
+  if (map.getLayer("raster-overlay-layer")) map.removeLayer("raster-overlay-layer");
+  if (map.getSource("raster-overlay")) map.removeSource("raster-overlay");
+
+  if (!rasterId) {
+    document.getElementById("raster-overlay-legend").innerHTML = "";
+    return;
+  }
+
+  const rasterMeta = rasterCatalog.find((r) => r.id === rasterId);
+  if (!rasterMeta) return;
+
+  document.getElementById("raster-overlay-legend").textContent = "読み込み中...";
+  try {
+    const { canvas, min, max, bbox } = await buildRasterOverlayCanvas(rasterMeta);
+    const coordinates = [
+      [bbox[0], bbox[3]],
+      [bbox[2], bbox[3]],
+      [bbox[2], bbox[1]],
+      [bbox[0], bbox[1]],
+    ];
+    map.addSource("raster-overlay", { type: "image", url: canvas.toDataURL(), coordinates });
+    map.addLayer({
+      id: "raster-overlay-layer",
+      type: "raster",
+      source: "raster-overlay",
+      paint: { "raster-opacity": Number(document.getElementById("raster-overlay-opacity").value) },
+    });
+    renderRasterOverlayLegend(rasterMeta, min, max);
+  } catch (err) {
+    document.getElementById("raster-overlay-legend").textContent = `読み込みエラー: ${err.message}`;
+  }
+}
+
+document.getElementById("raster-overlay-select").addEventListener("change", (e) => {
+  currentRasterOverlayId = e.target.value || null;
+  setRasterOverlay(currentRasterOverlayId);
+});
+
+document.getElementById("raster-overlay-opacity").addEventListener("input", (e) => {
+  document.getElementById("raster-overlay-opacity-value").textContent = e.target.value;
+  if (map.getLayer("raster-overlay-layer")) {
+    map.setPaintProperty("raster-overlay-layer", "raster-opacity", Number(e.target.value));
+  }
+});
 
 // 指定バッファ内の1ラスタの統計値(平均・最小・最大・サンプル数)を計算する
 async function computeRasterBufferStats(rasterMeta, bufferPolygon, bufferBbox) {
@@ -199,15 +351,15 @@ async function calcStatsForAllRastersInPolygon(polygon) {
     rasterCatalog.map((r) => computeRasterBufferStats(r, polygon, bbox).catch((err) => ({ ...r, error: err.message })))
   );
 
-  let html = "<table><tr><th>ラスタ（単位）</th><th>平均/割合</th><th>合計</th><th>最小</th><th>最大</th><th>集計セル数</th></tr>";
+  let html = "<table><tr><th>ラスタ（単位）</th><th>平均/割合</th><th>最小</th><th>最大</th><th>集計セル数</th></tr>";
   results.forEach((r) => {
     const label = r.unit ? `${r.name}<br><span style="color:#888;font-weight:normal;">(${r.unit})</span>` : r.name;
     if (r.error) {
-      html += `<tr><td>${label}</td><td colspan="5">エラー: ${r.error}</td></tr>`;
+      html += `<tr><td>${label}</td><td colspan="4">エラー: ${r.error}</td></tr>`;
     } else if (r.outOfExtent || r.count === 0) {
-      html += `<tr><td>${label}</td><td colspan="5">指定範囲がデータ範囲外です</td></tr>`;
+      html += `<tr><td>${label}</td><td colspan="4">指定範囲がデータ範囲外です</td></tr>`;
     } else {
-      html += `<tr><td>${label}</td><td>${r.mean.toFixed(2)}</td><td>${r.sum.toFixed(2)}</td><td>${r.min.toFixed(2)}</td><td>${r.max.toFixed(2)}</td><td>${r.count}</td></tr>`;
+      html += `<tr><td>${label}</td><td>${r.mean.toFixed(2)}</td><td>${r.min.toFixed(2)}</td><td>${r.max.toFixed(2)}</td><td>${r.count}</td></tr>`;
     }
   });
   html += "</table>";
@@ -615,6 +767,10 @@ async function addDataLayers() {
     addDrawPreviewLayer();
   } catch (err) {
     console.warn("ベクタカタログ(data/vectors_catalog.json)の読み込みに失敗しました。", err);
+  }
+
+  if (currentRasterOverlayId) {
+    setRasterOverlay(currentRasterOverlayId);
   }
 
   dataLayerListenersAttached = true;
