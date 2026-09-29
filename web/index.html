@@ -51,6 +51,10 @@
       色分け項目:
       <select id="mesh-score-select"></select>
     </label>
+    <label style="margin-left: 18px;">
+      透過度: <span id="mesh-opacity-value">0.6</span>
+      <input type="range" id="mesh-opacity" min="0" max="1" step="0.05" value="0.6" />
+    </label>
     <div id="legend">
       <div class="bar"></div>
       <div class="labels" id="legend-labels"><span>低い</span><span>高い</span></div>
@@ -59,17 +63,36 @@
       <input type="checkbox" id="toggle-infiltration" />
       雨水浸透機能（千葉県）を表示
     </label>
+    <label style="margin-left: 18px;">
+      透過度: <span id="infiltration-opacity-value">0.5</span>
+      <input type="range" id="infiltration-opacity" min="0" max="1" step="0.05" value="0.5" />
+    </label>
     <div id="infiltration-legend" class="categorical-legend"></div>
   </section>
 
   <section>
-    <h2>② クリック地点の分析</h2>
+    <h2>② 範囲の分析</h2>
     <label>
+      <input type="radio" name="analysis-mode" id="mode-buffer" value="buffer" checked />
+      クリックしてバッファ範囲を分析
+    </label>
+    <label style="margin-left: 18px;">
       バッファ半径 (m):
       <input type="number" id="radius" value="300" min="50" max="3000" step="50" />
     </label>
-    <p class="note">地図上をクリックすると、その地点を中心とした
-    バッファ範囲内の各ラスタの統計値（平均・最小・最大・集計セル数）を計算します。</p>
+    <label>
+      <input type="radio" name="analysis-mode" id="mode-draw" value="draw" />
+      ポリゴンを描いて分析
+    </label>
+    <div id="draw-controls" style="display: none; margin-left: 18px;">
+      <p class="note" style="margin: 4px 0;">地図上を順にクリックして頂点を打ち、
+      「この範囲で計算」を押すと確定します（3点以上必要）。</p>
+      <button type="button" id="draw-undo">1つ戻す</button>
+      <button type="button" id="draw-clear">クリア</button>
+      <button type="button" id="draw-finish">この範囲で計算</button>
+    </div>
+    <p class="note">結果の「平均」は集計セルの合計(sum)を集計セル数(count)で
+    割った値で、比率として扱いたい場合の「割合」と同じ値です。</p>
     <div id="raster-results"></div>
   </section>
 
@@ -157,13 +180,13 @@ async function computeRasterBufferStats(rasterMeta, bufferPolygon, bufferBbox) {
   }
 
   if (count === 0) return { ...rasterMeta, count: 0 };
-  return { ...rasterMeta, count, mean: sum / count, min, max };
+  return { ...rasterMeta, count, sum, mean: sum / count, min, max };
 }
 
-async function calcBufferStatsForAllRasters(lng, lat, radiusMeters) {
-  const point = turf.point([lng, lat]);
-  const bufferPolygon = turf.buffer(point, radiusMeters / 1000, { units: "kilometers" });
-  const bufferBbox = turf.bbox(bufferPolygon);
+// 任意のポリゴン(バッファ円・手描きポリゴンいずれも可)に対して
+// 全ラスタの統計値を計算し、結果テーブルを描画する。
+async function calcStatsForAllRastersInPolygon(polygon) {
+  const bbox = turf.bbox(polygon);
 
   const resultsEl = document.getElementById("raster-results");
   if (rasterCatalog.length === 0) {
@@ -173,22 +196,28 @@ async function calcBufferStatsForAllRasters(lng, lat, radiusMeters) {
   resultsEl.textContent = "計算中...";
 
   const results = await Promise.all(
-    rasterCatalog.map((r) => computeRasterBufferStats(r, bufferPolygon, bufferBbox).catch((err) => ({ ...r, error: err.message })))
+    rasterCatalog.map((r) => computeRasterBufferStats(r, polygon, bbox).catch((err) => ({ ...r, error: err.message })))
   );
 
-  let html = "<table><tr><th>ラスタ（単位）</th><th>平均</th><th>最小</th><th>最大</th><th>集計セル数</th></tr>";
+  let html = "<table><tr><th>ラスタ（単位）</th><th>平均/割合</th><th>合計</th><th>最小</th><th>最大</th><th>集計セル数</th></tr>";
   results.forEach((r) => {
     const label = r.unit ? `${r.name}<br><span style="color:#888;font-weight:normal;">(${r.unit})</span>` : r.name;
     if (r.error) {
-      html += `<tr><td>${label}</td><td colspan="4">エラー: ${r.error}</td></tr>`;
+      html += `<tr><td>${label}</td><td colspan="5">エラー: ${r.error}</td></tr>`;
     } else if (r.outOfExtent || r.count === 0) {
-      html += `<tr><td>${label}</td><td colspan="4">バッファ範囲がデータ範囲外です</td></tr>`;
+      html += `<tr><td>${label}</td><td colspan="5">指定範囲がデータ範囲外です</td></tr>`;
     } else {
-      html += `<tr><td>${label}</td><td>${r.mean.toFixed(2)}</td><td>${r.min.toFixed(2)}</td><td>${r.max.toFixed(2)}</td><td>${r.count}</td></tr>`;
+      html += `<tr><td>${label}</td><td>${r.mean.toFixed(2)}</td><td>${r.sum.toFixed(2)}</td><td>${r.min.toFixed(2)}</td><td>${r.max.toFixed(2)}</td><td>${r.count}</td></tr>`;
     }
   });
   html += "</table>";
   resultsEl.innerHTML = html;
+}
+
+function calcBufferStatsForAllRasters(lng, lat, radiusMeters) {
+  const point = turf.point([lng, lat]);
+  const bufferPolygon = turf.buffer(point, radiusMeters / 1000, { units: "kilometers" });
+  return calcStatsForAllRastersInPolygon(bufferPolygon);
 }
 
 // ベースマップの定義。新しいタイル(旧版地形図など)を追加したいときは、
@@ -274,6 +303,92 @@ map.on("error", (e) => {
 });
 
 let dataLayerListenersAttached = false;
+
+// ポリゴン描画モード(範囲を自分で描いてラスタを分析する機能)の状態。
+let drawModeActive = false;
+let drawPoints = [];
+
+function drawPreviewGeoJSON() {
+  const features = drawPoints.map((pt) => ({
+    type: "Feature",
+    geometry: { type: "Point", coordinates: pt },
+    properties: {},
+  }));
+  if (drawPoints.length >= 2) {
+    const lineCoords = drawPoints.length >= 3 ? [...drawPoints, drawPoints[0]] : drawPoints;
+    features.push({ type: "Feature", geometry: { type: "LineString", coordinates: lineCoords }, properties: {} });
+  }
+  if (drawPoints.length >= 3) {
+    features.push({
+      type: "Feature",
+      geometry: { type: "Polygon", coordinates: [[...drawPoints, drawPoints[0]]] },
+      properties: {},
+    });
+  }
+  return { type: "FeatureCollection", features };
+}
+
+// setStyle()でスタイルを切り替えるとソース/レイヤーが全て消えるため、
+// addDataLayers()の中から毎回呼び、まだ無ければ作る。
+function addDrawPreviewLayer() {
+  if (map.getSource("draw-preview")) return;
+  map.addSource("draw-preview", { type: "geojson", data: drawPreviewGeoJSON() });
+  map.addLayer({
+    id: "draw-preview-fill",
+    type: "fill",
+    source: "draw-preview",
+    filter: ["==", ["geometry-type"], "Polygon"],
+    paint: { "fill-color": "#ff7f00", "fill-opacity": 0.2 },
+  });
+  map.addLayer({
+    id: "draw-preview-line",
+    type: "line",
+    source: "draw-preview",
+    filter: ["==", ["geometry-type"], "LineString"],
+    paint: { "line-color": "#ff7f00", "line-width": 2, "line-dasharray": [2, 1] },
+  });
+  map.addLayer({
+    id: "draw-preview-points",
+    type: "circle",
+    source: "draw-preview",
+    filter: ["==", ["geometry-type"], "Point"],
+    paint: { "circle-radius": 4, "circle-color": "#ff7f00" },
+  });
+}
+
+function updateDrawPreview() {
+  const src = map.getSource("draw-preview");
+  if (src) src.setData(drawPreviewGeoJSON());
+}
+
+function clearDrawPoints() {
+  drawPoints = [];
+  updateDrawPreview();
+}
+
+document.querySelectorAll('input[name="analysis-mode"]').forEach((radio) => {
+  radio.addEventListener("change", () => {
+    drawModeActive = document.getElementById("mode-draw").checked;
+    document.getElementById("draw-controls").style.display = drawModeActive ? "block" : "none";
+    clearDrawPoints();
+  });
+});
+
+document.getElementById("draw-undo").addEventListener("click", () => {
+  drawPoints.pop();
+  updateDrawPreview();
+});
+
+document.getElementById("draw-clear").addEventListener("click", clearDrawPoints);
+
+document.getElementById("draw-finish").addEventListener("click", () => {
+  if (drawPoints.length < 3) {
+    alert("ポリゴンには3点以上の頂点が必要です。");
+    return;
+  }
+  const ring = [...drawPoints, drawPoints[0]];
+  calcStatsForAllRastersInPolygon(turf.polygon([ring]));
+});
 
 // メッシュの色分け対象スコアの定義(gisdata/千葉県版のメッシュ属性名と一致することを確認済み)。
 // 印旛沼流域の高解像度メッシュデータが同じ属性名で作られる想定だが、実データが
@@ -383,7 +498,7 @@ async function addDataLayers() {
         source: "inzai-mesh",
         paint: {
           "fill-color": meshFillColorExpression(currentMeshScore),
-          "fill-opacity": 0.6,
+          "fill-opacity": Number(document.getElementById("mesh-opacity").value),
         },
       });
       map.addLayer({
@@ -396,6 +511,7 @@ async function addDataLayers() {
 
       if (!dataLayerListenersAttached) {
         map.on("click", "inzai-mesh-fill", (e) => {
+          if (drawModeActive) return;
           const p = e.features[0].properties;
           new maplibregl.Popup()
             .setLngLat(e.lngLat)
@@ -424,6 +540,14 @@ async function addDataLayers() {
           meshScoreSelect.appendChild(option);
         });
         meshScoreSelect.addEventListener("change", (e) => setMeshScore(e.target.value));
+
+        const meshOpacityInput = document.getElementById("mesh-opacity");
+        meshOpacityInput.addEventListener("input", (e) => {
+          document.getElementById("mesh-opacity-value").textContent = e.target.value;
+          if (map.getLayer("inzai-mesh-fill")) {
+            map.setPaintProperty("inzai-mesh-fill", "fill-opacity", Number(e.target.value));
+          }
+        });
       }
     }
 
@@ -449,7 +573,7 @@ async function addDataLayers() {
         layout: { visibility: infiltrationVisible ? "visible" : "none" },
         paint: {
           "fill-color": infiltrationFillColorExpression(),
-          "fill-opacity": 0.5,
+          "fill-opacity": Number(document.getElementById("infiltration-opacity").value),
         },
       });
       map.addLayer({
@@ -463,6 +587,7 @@ async function addDataLayers() {
 
       if (!dataLayerListenersAttached) {
         map.on("click", "inzai-infiltration-fill", (e) => {
+          if (drawModeActive) return;
           const p = e.features[0].properties;
           const cat = INFILTRATION_CATEGORIES.find((c) => c.value === p.result);
           new maplibregl.Popup()
@@ -476,8 +601,18 @@ async function addDataLayers() {
           map.setLayoutProperty("inzai-infiltration-fill", "visibility", visibility);
           map.setLayoutProperty("inzai-infiltration-outline", "visibility", visibility);
         });
+
+        const infiltrationOpacityInput = document.getElementById("infiltration-opacity");
+        infiltrationOpacityInput.addEventListener("input", (e) => {
+          document.getElementById("infiltration-opacity-value").textContent = e.target.value;
+          if (map.getLayer("inzai-infiltration-fill")) {
+            map.setPaintProperty("inzai-infiltration-fill", "fill-opacity", Number(e.target.value));
+          }
+        });
       }
     }
+
+    addDrawPreviewLayer();
   } catch (err) {
     console.warn("ベクタカタログ(data/vectors_catalog.json)の読み込みに失敗しました。", err);
   }
@@ -488,6 +623,11 @@ async function addDataLayers() {
 map.on("load", () => addDataLayers());
 
 map.on("click", (e) => {
+  if (drawModeActive) {
+    drawPoints.push([e.lngLat.lng, e.lngLat.lat]);
+    updateDrawPreview();
+    return;
+  }
   const { lng, lat } = e.lngLat;
   const radiusMeters = Number(document.getElementById("radius").value) || 300;
   calcBufferStatsForAllRasters(lng, lat, radiusMeters);
