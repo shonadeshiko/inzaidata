@@ -39,23 +39,158 @@ inzaidata/
 
 ## セットアップ（ローカルでパイプラインを試す）
 
+GDALのシステムライブラリが必要（`rasterio`/`geopandas`が依存）。
+
+```bash
+# Ubuntu/Debian
+sudo apt-get install -y gdal-bin libgdal-dev
+# macOS (Homebrew)
+brew install gdal
+```
+
 ```bash
 cd pipeline
 python -m venv venv
-source venv/bin/activate
+source venv/bin/activate   # Windowsは venv\Scripts\activate
 pip install -r requirements.txt
 python process/ingest_inzai_data.py   # 元データが data/raw/inzai/ にある場合
 ```
 
-新しいデータを追加したい場合は `pipeline/process/ingest_inzai_data.py` の
-`RASTER_DEFS` / `VECTOR_DEFS` に定義を1つ追加するだけでよい。連続値のデータを
-uint8で軽量化したい場合は `uint8_scale` を指定する（例: 10を指定すると
-値を10倍してuint8(0-255)に丸めて保存し、frontend側で10で割り戻す）。
+## 新しいラスタ/ベクタデータを追加する手順（Claudeを介さずに行う場合）
 
-`RASTER_DEFS` の `"src"` にファイル名のリストを渡すと、複数ファイル
-（例: 分割されたデータ）をモザイク結合してから処理する
+Claudeに頼らずデータを追加・更新したい場合は、以下の手順をそのまま
+たどればよい（このREADME自体がそのためのテンプレート）。
+
+### 1. 元データを配置する
+
+```
+data/raw/inzai/raster/<ファイル名>.tif
+data/raw/inzai/vector/<ファイル名>.shp (.gpkg等)
+```
+
+（このディレクトリは`.gitignore`対象なので、置くだけではGitに反映されない。
+後述の通り、Gitに乗るのは`pipeline/process/ingest_inzai_data.py`実行後の
+`data/processed/`配下の成果物のみ）
+
+### 2. `pipeline/process/ingest_inzai_data.py` に定義を1つ追加する
+
+`RASTER_DEFS`（ラスタの場合）または`VECTOR_DEFS`（ベクタの場合）の
+リストの末尾に、以下のテンプレートをコピーして追記する。
+
+**ラスタの場合：**
+
+```python
+{
+    "id": "inzai_xxx",                 # 半角英数字・アンダースコアのみ。他と重複しないこと
+    "src": "元ファイル名.tif",          # data/raw/inzai/raster/ 内のファイル名
+    "name": "画面に表示する名前（日本語可）",
+    "unit": "単位（例: 比率(0-1)、ランク(1-5) など）",
+    "description": "画面の説明文に使われる1〜2文程度の説明",
+    "resampling": Resampling.bilinear, # 連続値ならbilinear、カテゴリ/ランク値ならnearest
+    # 連続値を軽量化したい場合のみ指定（省略可）。10なら値を10倍してuint8(0-255)で
+    # 保存し、frontend側で10で割り戻す。小数点以下1桁を保ったまま軽量化できる
+    "uint8_scale": 10,
+},
+```
+
+ファイルが複数に分割されている場合（例: 都道府県ごとに分かれているなど）は、
+`"src"` にリストを渡すとモザイク結合してから処理される
 （`merge_rasters()` 参照。shimamotodataで京都府・大阪府にまたがる
 データを結合するために追加した仕組みを流用）。
+
+```python
+"src": ["ファイルA.tif", "ファイルB.tif"],
+```
+
+**ベクタの場合：**
+
+```python
+{
+    "id": "inzai_xxx",
+    "src": "元ファイル名.shp",          # data/raw/inzai/vector/ 内のファイル名
+    "name": "画面に表示する名前",
+    "description": "説明文",
+    # 以下はオプション（必要な場合のみ追加）
+    "fix_mojibake": True,              # 属性の日本語が文字化けする場合に指定
+    "simplify_tolerance": 0.0003,      # ジオメトリが重い場合に単純化する度数(約0.0003度=約30m)
+},
+```
+
+カテゴリカルな値（例: 区分名など）を地図上で色分け表示したい場合は、
+`web/index.html` 側にも凡例の仕組みを追加する必要がある
+（`inzai_infiltration_potential`の実装、`INFILTRATION_CATEGORIES`が参考例）。
+単に属性テーブルをポップアップ表示するだけなら、この手順2だけで完結する。
+
+### 3. パイプラインを実行する
+
+```bash
+cd pipeline
+source venv/bin/activate
+python process/ingest_inzai_data.py
+```
+
+エラーなく完了したら、`data/processed/catalog.json`（ラスタ一覧）または
+`data/processed/vectors_catalog.json`（ベクタ一覧）に新しいエントリが
+追加されていること、対応するファイルが`data/processed/rasters/`または
+`data/processed/vectors/`に生成されていることを確認する。
+
+### 4. ローカルで表示確認する
+
+```bash
+mkdir -p web/data
+cp -r data/processed/* web/data/
+cd web
+python -m http.server 8000
+```
+
+ブラウザで `http://localhost:8000` を開き、追加したデータが
+パネルの選択肢に表示され、クリック/範囲選択で正しく集計されることを確認する。
+
+### 5. GitHubに反映する（別環境で作業する場合）
+
+このリポジトリを初めてcloneする環境、あるいはいつもと違うPC/CI環境で
+作業する場合の、初回セットアップからpushまでの一連の流れ。
+
+```bash
+# 1. リポジトリをclone（初回のみ）
+git clone https://github.com/shonadeshiko/inzaidata.git
+cd inzaidata
+
+# 2. 現在のmainの最新状態を取り込む（他の変更と衝突しないように）
+git checkout main
+git pull origin main
+
+# 3. 元データを data/raw/inzai/{raster,vector}/ に配置し、
+#    上記1〜4の手順で RASTER_DEFS/VECTOR_DEFS への追記・パイプライン実行・
+#    ローカル確認まで行う
+
+# 4. 変更内容を確認する（data/processed/ 以下の生成物と、
+#    ingest_inzai_data.py の差分だけになっているはず）
+git status
+git diff pipeline/process/ingest_inzai_data.py
+
+# 5. ステージ・コミット・push
+git add pipeline/process/ingest_inzai_data.py data/processed/
+git commit -m "データ追加: <追加したデータの説明>"
+git push origin main
+```
+
+`git push`すると、`.github/workflows/pipeline.yml`が
+`data/processed/**`の変更を検知して自動実行され、
+`web/data/`へのコピー→GitHub Pagesへのデプロイまで自動で行われる
+（進捗は https://github.com/shonadeshiko/inzaidata/actions で確認できる）。
+数分後に https://shonadeshiko.github.io/inzaidata/ に反映される。
+
+**認証について**：`git push`時にGitHubの認証が求められる場合は、
+HTTPSならPersonal Access Token（パスワード欄にトークンを入力）、
+SSHなら`git@github.com:shonadeshiko/inzaidata.git`形式のURLで
+clone済みであることを確認する。初回pushで認証エラーが出た場合は、
+GitHub上でリポジトリへの書き込み権限があるアカウントでログインできているか
+確認すること。
+
+**注意**：`data/raw/`配下は`.gitignore`対象のため、元データ自体は
+Gitに乗らない（コミットされるのは`data/processed/`の生成物のみ）。
+元データは別途バックアップ・共有しておくこと。
 
 ## フロントエンドの確認
 
