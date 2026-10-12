@@ -309,6 +309,17 @@ EPSG:4326への再投影・COG化・GeoJSON化を行う。
   - `JAXA_HRLC土地被覆_2020_白井印西.tif` / `_2024_白井印西.tif`
     （カテゴリカル、1-15の土地被覆区分）
 
+### 浸透込みメッシュ2種の取り込み（準備済み・未実行）
+
+`メッシュ100m_GI統合浸透込み_白井印西.gpkg`（`inzai_mesh100m_gi_infil`）と
+`メッシュ100m_GI統合浸透込み優先度_白井印西.gpkg`（`inzai_mesh100m_gi_infil_priority`）を
+`VECTOR_DEFS`に追加済み。既存の`inzai_mesh100m_gi`はそのまま残る。
+
+1. 2つのgpkgを`data/raw/inzai/vector/`に置き、`python process/ingest_inzai_data.py`を実行
+   （ログに`列: ...`として属性名が表示される）
+2. 属性名を確認したうえで、`web/index.html`にレイヤーの表示切り替え・色分けを追加する
+3. `data/processed/`をコミットしてpush
+
 ## 今後のTODO
 
 - [ ] JAXA土地被覆データの取り込み（ラスタのカテゴリカル値色分けを
