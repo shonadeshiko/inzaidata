@@ -110,6 +110,18 @@ VECTOR_DEFS: list[dict] = [
         "description": "100mメッシュ単位のグリーンインフラ(GI)関連スコア・開発圧・土地被覆割合等の統合データ(高解像度版)。",
     },
     {
+        "id": "inzai_mesh100m_gi_infil",
+        "src": "メッシュ100m_GI統合浸透込み_白井印西.gpkg",
+        "name": "100mメッシュ GI統合（雨水浸透込み・白井印西）",
+        "description": "100mメッシュGI統合データに雨水浸透機能の指標を加えた版。",
+    },
+    {
+        "id": "inzai_mesh100m_gi_infil_priority",
+        "src": "メッシュ100m_GI統合浸透込み優先度_白井印西.gpkg",
+        "name": "100mメッシュ GI統合（雨水浸透込み・優先度・白井印西）",
+        "description": "雨水浸透機能を加味して優先度を再計算した100mメッシュGI統合データ。",
+    },
+    {
         "id": "inzai_infiltration_potential",
         "src": "03_地形・地質等から期待される雨水浸透機能_12_千葉県.shp",
         "name": "雨水浸透機能（千葉県）",
@@ -273,6 +285,7 @@ def process_vectors() -> list[dict]:
         print(f"処理中: {definition['src']} -> {dst_path.name}")
 
         gdf = gpd.read_file(src_path)
+        print("  列:", ", ".join(c for c in gdf.columns if c != gdf.geometry.name))
         if definition.get("fix_mojibake"):
             for col in gdf.select_dtypes(include=["object", "str"]).columns:
                 if col == gdf.geometry.name:
